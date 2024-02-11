@@ -1,6 +1,6 @@
-# TensorFlow Lite Micro Library for Arduino
+# TensorFlow Lite for Microcontrollers (TLFM) Library for RTduino
 
-This repository has the code (including examples) needed to use Tensorflow Lite Micro on an Arduino.
+This repository has the code (including examples) needed to use TensorFlow Lite for Microcontrollers (TLFM) on an RTduino.
 
 ## Table of contents
 <!--ts-->
