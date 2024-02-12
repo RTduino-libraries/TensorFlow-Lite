@@ -13,8 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-//#include <Arduino.h>
-
+#include <Arduino.h>
+// Arduino.h defines max and min macros which conflict with std::numeric_limits in C++.
+#undef max
+#undef min
 #include <limits>
 
 #include "utility.h"
@@ -22,13 +24,13 @@ limitations under the License.
 namespace peripherals {
 
 void DelayMicroseconds(uint32_t delay) {
-  // constexpr uint16_t kArduinoAccurateDelay = 16383;
+  constexpr uint16_t kArduinoAccurateDelay = 16383;
 
-  // while (delay > kArduinoAccurateDelay) {
-  //   delayMicroseconds(kArduinoAccurateDelay);
-  //   delay -= kArduinoAccurateDelay;
-  // }
-  // delayMicroseconds(delay);
+  while (delay > kArduinoAccurateDelay) {
+    delayMicroseconds(kArduinoAccurateDelay);
+    delay -= kArduinoAccurateDelay;
+  }
+  delayMicroseconds(delay);
 }
 
 void DelayMilliseconds(uint32_t amount) {
@@ -43,11 +45,11 @@ void DelayMilliseconds(uint32_t amount) {
   DelayMicroseconds(amount * 1000);
 }
 
-uint32_t MicrosecondsCounter() { return 0;/*micros();*/ }
+uint32_t MicrosecondsCounter() { return micros(); }
 
-uint32_t MillisecondsCounter() {  return 0; /*millis();*/ }
+uint32_t MillisecondsCounter() { return millis(); }
 
-void DebugOutput(const char* s) { /*Serial.println(s);*/ }
+void DebugOutput(const char* s) { Serial.println(s); }
 
 TimestampBuffer::TimestampBuffer()
     : insert_index_{0}, show_index_{0}, entries_{} {}
@@ -64,12 +66,12 @@ void TimestampBuffer::Insert(const char c) {
     // insert overflow
     if (entries_[insert_index_].c_ != '\0') {
       entries_[insert_index_].c_ = '\0';
-      entries_[insert_index_].timestamp_us_ = 0; //micros();
+      entries_[insert_index_].timestamp_us_ = micros();
     }
   } else {
     // insert new timestamp
     entries_[insert_index_].c_ = c;
-    entries_[insert_index_].timestamp_us_ = 0;//micros();
+    entries_[insert_index_].timestamp_us_ = micros();
     insert_index_ = (insert_index_ + 1) % kNumEntries;
   }
 }
@@ -78,14 +80,14 @@ void TimestampBuffer::Show() {
   while (show_index_ != insert_index_) {
     if (entries_[show_index_].c_ == '\0') {
       // overflow message
-      // Serial.print(entries_[show_index_].timestamp_us_);
-      // Serial.print(": ");
-      // Serial.println("*** TimestampBuffer Overflow ***");
+      Serial.print(entries_[show_index_].timestamp_us_);
+      Serial.print(": ");
+      Serial.println("*** TimestampBuffer Overflow ***");
       break;
     } else {
-      // Serial.print(entries_[show_index_].timestamp_us_);
-      // Serial.print(": ");
-      // Serial.println(entries_[show_index_].c_);
+      Serial.print(entries_[show_index_].timestamp_us_);
+      Serial.print(": ");
+      Serial.println(entries_[show_index_].c_);
       show_index_ = (show_index_ + 1) % kNumEntries;
     }
   }
