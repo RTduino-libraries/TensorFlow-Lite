@@ -5,7 +5,7 @@
 # https://yaml-online-parser.appspot.com/
 #
 
-name: (Arduino) Sync from tflite-micro
+name: (RTduino) Sync from tflite-micro
 
 on:
 #  schedule:
@@ -21,7 +21,7 @@ jobs:
 
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'schedule' && github.repository == 'tensorflow/tflite-micro-arduino-examples')
+      (github.event_name == 'schedule' && github.repository == 'RTduino-libraries/TensorFlow-Lite-Micro')
 
     steps:
       - uses: actions/setup-python@v2
@@ -31,7 +31,7 @@ jobs:
 
       - name: Sync the code
         run: |
-          pip3 install six Pillow Wave
+          pip3 install six Pillow Wave numpy
           ./scripts/sync_from_tflite_micro.sh
           git config --local user.name "TFLM-bot"
           git config --local user.email "tflm-github-bot@google.com"
@@ -56,4 +56,4 @@ jobs:
           author: TFLM-bot <tflm-github-bot@google.com>
           body: "(Arduino) Automated sync from github.com/tensorflow/tflite-micro"
           labels: bot:sync-tf, ci:run
-          reviewers: advaitjain
+          reviewers: mysterywolf
