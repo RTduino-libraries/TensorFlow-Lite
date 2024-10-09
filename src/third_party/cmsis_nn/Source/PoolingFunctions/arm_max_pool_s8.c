@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2010-2022 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2010-2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -21,8 +21,8 @@
  * Title:        arm_max_pool_s8.c
  * Description:  Pooling function implementations
  *
- * $Date:        16 August 2022
- * $Revision:    V.3.0.1
+ * $Date:        27 November 2023
+ * $Revision:    V.3.1.0
  *
  * Target Processor:  Cortex-M CPUs
  *
@@ -31,7 +31,7 @@
 #include "third_party/cmsis_nn/Include/arm_nnfunctions.h"
 #include "third_party/cmsis_nn/Include/arm_nnsupportfunctions.h"
 
-static void compare_and_replace_if_larger_q7(q7_t *base, const q7_t *target, int32_t length)
+static void compare_and_replace_if_larger_q7(int8_t *base, const int8_t *target, int32_t length)
 {
 #if defined(ARM_MATH_MVEI)
     int32_t loop_count = (length + 15) / 16;
@@ -47,16 +47,16 @@ static void compare_and_replace_if_larger_q7(q7_t *base, const q7_t *target, int
         length -= 16;
     }
 #else
-    q7_t *dst = base;
-    const q7_t *src = target;
+    int8_t *dst = base;
+    const int8_t *src = target;
     union arm_nnword ref_max;
     union arm_nnword comp_max;
     int32_t cnt = length >> 2;
 
     while (cnt > 0l)
     {
-        ref_max.word = arm_nn_read_q7x4(dst);
-        comp_max.word = arm_nn_read_q7x4_ia(&src);
+        ref_max.word = arm_nn_read_s8x4(dst);
+        comp_max.word = arm_nn_read_s8x4_ia(&src);
 
         if (comp_max.bytes[0] > ref_max.bytes[0])
         {
@@ -75,7 +75,7 @@ static void compare_and_replace_if_larger_q7(q7_t *base, const q7_t *target, int
             ref_max.bytes[3] = comp_max.bytes[3];
         }
 
-        arm_nn_write_q7x4_ia(&dst, ref_max.word);
+        arm_nn_write_s8x4_ia(&dst, ref_max.word);
 
         cnt--;
     }
@@ -94,7 +94,7 @@ static void compare_and_replace_if_larger_q7(q7_t *base, const q7_t *target, int
 #endif
 }
 
-static void clamp_output(q7_t *source, int32_t length, const int32_t act_min, const int32_t act_max)
+static void clamp_output(int8_t *source, int32_t length, const int32_t act_min, const int32_t act_max)
 {
 #if defined(ARM_MATH_MVEI)
     int32_t loop_count = (length + 15) / 16;
@@ -117,7 +117,7 @@ static void clamp_output(q7_t *source, int32_t length, const int32_t act_min, co
 
     while (cnt > 0l)
     {
-        in.word = arm_nn_read_q7x4(source);
+        in.word = arm_nn_read_s8x4(source);
 
         in.bytes[0] = MAX(in.bytes[0], act_min);
         in.bytes[0] = MIN(in.bytes[0], act_max);
@@ -128,7 +128,7 @@ static void clamp_output(q7_t *source, int32_t length, const int32_t act_min, co
         in.bytes[3] = MAX(in.bytes[3], act_min);
         in.bytes[3] = MIN(in.bytes[3], act_max);
 
-        arm_nn_write_q7x4_ia(&source, in.word);
+        arm_nn_write_s8x4_ia(&source, in.word);
         cnt--;
     }
 
@@ -159,15 +159,15 @@ static void clamp_output(q7_t *source, int32_t length, const int32_t act_min, co
  * Refer to header file for details.
  *
  */
-
 arm_cmsis_nn_status arm_max_pool_s8(const cmsis_nn_context *ctx,
                                     const cmsis_nn_pool_params *pool_params,
                                     const cmsis_nn_dims *input_dims,
-                                    const q7_t *src,
+                                    const int8_t *src,
                                     const cmsis_nn_dims *filter_dims,
                                     const cmsis_nn_dims *output_dims,
-                                    q7_t *dst)
+                                    int8_t *dst)
 {
+    (void)ctx;
     const int32_t input_y = input_dims->h;
     const int32_t input_x = input_dims->w;
     const int32_t output_y = output_dims->h;
@@ -181,46 +181,59 @@ arm_cmsis_nn_status arm_max_pool_s8(const cmsis_nn_context *ctx,
     const int32_t act_min = pool_params->activation.min;
     const int32_t act_max = pool_params->activation.max;
     const int32_t channel_in = input_dims->c;
-    (void)ctx;
-    q7_t *dst_base = dst;
+    const int32_t batch_size = input_x * input_y * channel_in;
+    int32_t batch_cnt = input_dims->n;
 
-    for (int i_y = 0, base_idx_y = -pad_y; i_y < output_y; base_idx_y += stride_y, i_y++)
+    if (batch_cnt < 1)
     {
-        for (int i_x = 0, base_idx_x = -pad_x; i_x < output_x; base_idx_x += stride_x, i_x++)
-        {
-            /* Condition for kernel start dimension: (base_idx_<x,y> + kernel_<x,y>_start) >= 0 */
-            const int32_t ker_y_start = MAX(0, -base_idx_y);
-            const int32_t ker_x_start = MAX(0, -base_idx_x);
-
-            /* Condition for kernel end dimension: (base_idx_<x,y> + kernel_<x,y>_end) < dim_src_<width,height> */
-            const int32_t kernel_y_end = MIN(kernel_y, input_y - base_idx_y);
-            const int32_t kernel_x_end = MIN(kernel_x, input_x - base_idx_x);
-
-            int count = 0;
-
-            for (int k_y = ker_y_start; k_y < kernel_y_end; k_y++)
-            {
-                for (int k_x = ker_x_start; k_x < kernel_x_end; k_x++)
-                {
-                    const q7_t *start = src + channel_in * (k_x + base_idx_x + (k_y + base_idx_y) * input_x);
-
-                    if (count == 0)
-                    {
-                        arm_memcpy_q7(dst, start, channel_in);
-                        count++;
-                    }
-                    else
-                    {
-                        compare_and_replace_if_larger_q7(dst, start, channel_in);
-                    }
-                }
-            }
-            /* 'count' is expected to be non-zero here. */
-            dst += channel_in;
-        }
+        return ARM_CMSIS_NN_ARG_ERROR;
     }
 
-    clamp_output(dst_base, output_x * output_y * channel_in, act_min, act_max);
+    while (batch_cnt)
+    {
+        int8_t *dst_base = dst;
+
+        for (int i_y = 0, base_idx_y = -pad_y; i_y < output_y; base_idx_y += stride_y, i_y++)
+        {
+            for (int i_x = 0, base_idx_x = -pad_x; i_x < output_x; base_idx_x += stride_x, i_x++)
+            {
+                /* Condition for kernel start dimension: (base_idx_<x,y> + kernel_<x,y>_start) >= 0 */
+                const int32_t ker_y_start = MAX(0, -base_idx_y);
+                const int32_t ker_x_start = MAX(0, -base_idx_x);
+
+                /* Condition for kernel end dimension: (base_idx_<x,y> + kernel_<x,y>_end) < dim_src_<width,height> */
+                const int32_t kernel_y_end = MIN(kernel_y, input_y - base_idx_y);
+                const int32_t kernel_x_end = MIN(kernel_x, input_x - base_idx_x);
+
+                int count = 0;
+
+                for (int k_y = ker_y_start; k_y < kernel_y_end; k_y++)
+                {
+                    for (int k_x = ker_x_start; k_x < kernel_x_end; k_x++)
+                    {
+                        const int8_t *start = src + channel_in * (k_x + base_idx_x + (k_y + base_idx_y) * input_x);
+
+                        if (count == 0)
+                        {
+                            arm_memcpy_s8(dst, start, channel_in);
+                            count++;
+                        }
+                        else
+                        {
+                            compare_and_replace_if_larger_q7(dst, start, channel_in);
+                        }
+                    }
+                }
+                /* 'count' is expected to be non-zero here. */
+                dst += channel_in;
+            }
+        }
+
+        clamp_output(dst_base, output_x * output_y * channel_in, act_min, act_max);
+
+        src += batch_size;
+        batch_cnt--;
+    }
 
     return ARM_CMSIS_NN_SUCCESS;
 }

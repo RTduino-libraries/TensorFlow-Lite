@@ -1,4 +1,4 @@
-/* Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2024 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,21 +28,26 @@ limitations under the License.
 namespace tflite {
 namespace micro {
 
-TfLiteRegistration RegisterOp(
+TFLMRegistration RegisterOp(
     void* (*init)(TfLiteContext* context, const char* buffer, size_t length),
     TfLiteStatus (*prepare)(TfLiteContext* context, TfLiteNode* node),
     TfLiteStatus (*invoke)(TfLiteContext* context, TfLiteNode* node),
-    void (*free)(TfLiteContext* context, void* buffer) = nullptr);
+    void (*free)(TfLiteContext* context, void* buffer) = nullptr,
+    void (*reset)(TfLiteContext* context, void* buffer) = nullptr);
+
+TFLMInferenceRegistration RegisterOp(
+    TfLiteStatus (*invoke)(TfLiteContext* context, TfLiteNode* node),
+    void (*reset)(TfLiteContext* context, void* buffer) = nullptr);
 
 // Prints out n bytes in a int8_t buffer as hex
 void PrintNBytes(const int8_t* tensor_data, int n_bytes,
                  const char* prefix = nullptr);
 
-// Prints out the the n bytes in a TfLiteEvalTensor as hex
+// Prints out the n bytes in a TfLiteEvalTensor as hex
 void PrintNBytes(const TfLiteEvalTensor* tensor, int n_bytes,
                  const char* prefix = nullptr);
 
-// Prints out the the n bytes in a TfLiteTensor as hex
+// Prints out n bytes in a TfLiteTensor as hex
 void PrintNBytes(const TfLiteTensor* tensor, int n_bytes,
                  const char* prefix = nullptr);
 
@@ -85,6 +90,31 @@ const T* GetOptionalTensorData(const TfLiteEvalTensor* tensor) {
   return tensor == nullptr ? nullptr
                            : reinterpret_cast<const T*>(tensor->data.raw);
 }
+
+#ifdef USE_TFLM_COMPRESSION
+
+// Overloads existing GetTensorData. If not compressed, this will return
+// tensor->data.
+//
+// TODO(ddavis-2015): make micro_context a const pointer
+template <typename T>
+const T* GetTensorData(MicroContext* micro_context,
+                       const TfLiteEvalTensor* tensor,
+                       const CompressionTensorData* compression_data,
+                       int scratch_buffer_handle) {
+  if (tensor == nullptr) {
+    return nullptr;
+  }
+  if (compression_data == nullptr) {
+    return reinterpret_cast<const T*>(tensor->data.data);
+  }
+
+  void* uncompressed_data = micro_context->DecompressTensorToScratchBuffer(
+      *tensor, *compression_data, scratch_buffer_handle);
+  return reinterpret_cast<const T*>(uncompressed_data);
+}
+
+#endif  // USE_TFLM_COMPRESSION
 
 // Returns the shape of a TfLiteEvalTensor struct.
 const RuntimeShape GetTensorShape(const TfLiteEvalTensor* tensor);
